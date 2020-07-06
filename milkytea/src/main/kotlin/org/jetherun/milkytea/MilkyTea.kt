@@ -30,7 +30,8 @@ import org.jetherun.milkytea.plugins.base.ClockPlugin
 import org.jetherun.milkytea.plugins.base.Plugin
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.collections.LinkedHashMap
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 @Suppress("ControlFlowWithEmptyBody", "Unused")
 class MilkyTea(
@@ -39,7 +40,7 @@ class MilkyTea(
         val resPath: String = "src/main/resources"
 ) {
     val bot = Bot(qqId, passwords)
-    val kwargs = mutableMapOf<String, Any>()
+    val kwargs = ConcurrentHashMap<String, Any>()
     val logger = Log()
 
     // 会话池结构: Pool{"Obj1": Session, "Obj2"...}; Obj为触发会话的消息的发送者, 无论是群消息还是好友消息都是发送者的Q号
@@ -59,7 +60,7 @@ class MilkyTea(
      * 当收到事件 [Event] 广播时, 由上自下将事件传递到各插件
      * 若事件成功通过某一插件的 [EventPlugin.filter] 且该插件声明截断事件 [EventPlugin.ceaseEvent] 则不会继续向下传递该事件
      * 在 MilkyTea 实例化后可以通过 [MutableList.add] 添加插件, 也可以放入List中使用 [MutableList.addAll] 添加
-     * 插件添加的先后顺序影响事件传递, 位于前面的插件可以选择不继续传递事件(截断事件), 这将会导致后面的插件收不到事件广播, 具体插件先后顺序需要根据需要自行安排
+     * 插件添加的先后顺序影响事件传递, 位于前面的插件 可以选择不继续传递事件(截断事件), 这将会导致后面的插件收不到事件广播, 具体插件先后顺序需要根据需要自行安排
      *
      * 定时触发插件:
      * MilkyTea初始化时会新建一个线程用于监听各[ClockPlugin]
@@ -67,7 +68,9 @@ class MilkyTea(
      *
      * PS: 一个插件可以同时作为 EventPlugin 与 ClockPlugin, 只需要同时实现接口即可
      */
-    val plugins: MutableList<Plugin> = mutableListOf(MessagePool.MessagePoolRecorder(this))
+    val plugins: MutableList<Plugin> = CopyOnWriteArrayList(mutableListOf(
+            MessagePool.MessagePoolRecorder(this)  // 消息池记录
+    ))
 
     init {
         logger.i(tag, "Logging")
@@ -110,17 +113,15 @@ class MilkyTea(
 
         Thread {
             while (true) {
-                sessionPool.visit {
-                    val nowTime = System.currentTimeMillis()
-                    var sessionMsg = ""
-                    for (key in sessionPool.keys) {
-                        if ((sessionPool[key]!!.overTime) - nowTime < 0L)
-                            sessionPool.remove(key)
-                        else
-                            sessionMsg += "${sessionPool[key]!!.name}($key) "
-                    }
-                    if (sessionMsg != "") { logger.d(tag, "Now SessionPool: $sessionMsg") }
+                val nowTime = System.currentTimeMillis()
+                var sessionMsg = ""
+                for (key in sessionPool.keys) {
+                    if ((sessionPool[key]!!.overTime) - nowTime < 0L)
+                        sessionPool.remove(key)
+                    else
+                        sessionMsg += "${sessionPool[key]!!.name}($key) "
                 }
+                if (sessionMsg != "") { logger.d(tag, "Now SessionPool: $sessionMsg") }
                 Thread.sleep(60000)
             }
         }.start()
@@ -129,19 +130,17 @@ class MilkyTea(
         logger.i(tag, "Initialized MessagePool")
         Thread {
             while (true) {
-                sessionPool.visit {
-                    val nowTime = System.currentTimeMillis() / 1000  // 注意该处的时间戳单位是秒!
-                    for (obj in messagePool){
-                        val removeList = arrayListOf<MessageChain>()
-                        for ( msg in obj.value){
-                            // 删除所有1小时前的消息, 在迭代器中不能直接remove, 除非是线程安全的.
-                            if (nowTime - msg.time > 3600){
-                                logger.d(tag, "Remove Message (${obj.key}): ${msg.content}")
-                                removeList.add(msg)
-                            } else break
-                        }
-                        obj.value.removeAll(removeList)
+                val nowTime = System.currentTimeMillis() / 1000  // 注意该处的时间戳单位是秒!
+                for (obj in messagePool){
+                    val removeList = arrayListOf<MessageChain>()
+                    for ( msg in obj.value){
+                        // 删除所有1小时前的消息, 在迭代器中不能直接remove, 除非是线程安全的.
+                        if (nowTime - msg.time > 3600){
+                            logger.d(tag, "Remove Message (${obj.key}): ${msg.content}")
+                            removeList.add(msg)
+                        } else break
                     }
+                    obj.value.removeAll(removeList)
                 }
                 Thread.sleep(60000)
             }
@@ -151,17 +150,13 @@ class MilkyTea(
         logger.i(tag, "Initialized ClockPlugin Thread")
         Thread {
             while (true) {
-                try {
-                    plugins.forEach {
-                        if (it is ClockPlugin) {
-                            if (it.timer()) {
+                plugins.forEach {
+                    if (it is ClockPlugin) {
+                        if (it.timer()) {
 //                            logger.d(tag, "Run ClockPlugin ${it.javaClass.name}")
-                                it.run()
-                            }
+                            it.run()
                         }
                     }
-                } catch (e: Exception){
-                    logger.ex(tag, "ClockThread Concurrent Modification Exception")
                 }
             }
         }.start()
@@ -202,34 +197,12 @@ class MilkyTea(
      * 池子的基类
      *
      * [V] : 池子内的数据结构
-     *
-     * 注意, 该类下的所有方法都不能嵌套使用, 否则会造成线程锁死
      */
-    open class Pool<V>: LinkedHashMap<String, V>() {
-        protected var isCheckingPool = false
+    open class Pool<V>: ConcurrentHashMap<String, V>() {
         fun checkPool(key: String): V?{
-            return visit <V> {
-                if (key in this.keys){
-                    isCheckingPool = false
-                    this[key]!!
-                } else null
-            }
-        }
-
-        fun <T> visit(foo: () -> T?): T?{
-            while (isCheckingPool);
-            isCheckingPool = true
-            val result = foo()
-            isCheckingPool = false
-            return result
-        }
-
-        fun addObj(key: String, obj: V){
-            visit { this[key] = obj }
-        }
-
-        fun removeObj(key: String){
-            visit { this.remove(key) }
+            return if (key in this.keys){
+                this[key]!!
+            } else null
         }
     }
 
@@ -242,17 +215,14 @@ class MilkyTea(
          *  未找到 -> null
          */
         fun inquiryAllMessageFromId(msgId: Int): MessageChain?{
-            return visit {
-                for (obj in this.values){
-                    for (msg in obj){
-                        if (msg.id == msgId) {
-                            isCheckingPool = false
-                            return@visit msg
-                        }
+            for (obj in this.values){
+                for (msg in obj){
+                    if (msg.id == msgId) {
+                        return msg
                     }
                 }
-                return@visit null
             }
+            return null
         }
 
         /**
@@ -266,16 +236,13 @@ class MilkyTea(
          */
         fun inquiryMessageFromId(msgId: Int, objKey: String): MessageChain? {
             checkPool(objKey) ?. let {
-                return visit {
-                    for (msg in it){
-                        if (msg.id == msgId) {
-                            isCheckingPool = false
-                            return@visit msg
-                        }
+                for (msg in it){
+                    if (msg.id == msgId) {
+                        return msg
                     }
-                    return@visit null
                 }
-            } ?: return null
+            }
+            return null
         }
 
         /**
@@ -296,7 +263,7 @@ class MilkyTea(
                     (event.message[0] as MessageSource).fromId.toString()
 
                 milkyTea.messagePool.checkPool(objKey) ?. add(event.message) ?: let {
-                    milkyTea.messagePool.addObj(objKey, mutableListOf(event.message))
+                    milkyTea.messagePool[objKey] = mutableListOf(event.message)
                 }
                 milkyTea.logger.d(tag, "Add New Message In MessagePool (${objKey}): ${event.message.content}")
                 return null
