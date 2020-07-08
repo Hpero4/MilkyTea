@@ -29,10 +29,8 @@ interface SessionMessagePlugin: ShareMessagePlugin {
      * 在会话池中添加一个会话
      */
     fun addSession(sessionKey: String){
-        milkyTea.sessionPool.addObj(
-                sessionKey,
-                MilkyTea.Session(tag, System.currentTimeMillis() + timeout, nameZh, this)
-        )
+        milkyTea.sessionPool[sessionKey] = MilkyTea.Session(
+                tag, System.currentTimeMillis() + timeout, nameZh, this)
     }
 
     /**
@@ -44,7 +42,7 @@ interface SessionMessagePlugin: ShareMessagePlugin {
     fun cancelSession(event: MessageContent, sessionKey: String): Boolean{
         arrayListOf("算了", "取消", "cancel").forEach { keyWord ->
             if (keyWord in event.content) {
-                milkyTea.sessionPool.removeObj(sessionKey)
+                milkyTea.sessionPool.remove(sessionKey)
                 return true
             }
         }

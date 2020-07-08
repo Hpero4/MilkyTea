@@ -15,7 +15,7 @@ class MtUtil {
          */
         fun randomFace(path: String, re: String = ""): File{
             val mPath = File(path)
-            if (!mPath.isDirectory) throw IllegalArgumentException("实参 path 必须是路径")
+            if (!mPath.isDirectory) throw IllegalArgumentException("实参 path 期望是路径, 得到 ${mPath.absolutePath}")
 
             val files = mPath.listFiles()!!
             val results = arrayListOf<File>()

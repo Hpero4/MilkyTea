@@ -32,6 +32,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.collections.ArrayList
 
 @Suppress("ControlFlowWithEmptyBody", "Unused")
 class MilkyTea(
@@ -88,26 +89,30 @@ class MilkyTea(
 
         logger.i(tag, "Initializing Plugins")
         bot.subscribeAlways<Event> { event ->
-            var isSessionContinue = false
-            if (event is MessageEvent){
-                val sessionKey = (event.message[0] as MessageSource).fromId.toString()
-                sessionPool.checkPool(sessionKey) ?. let {
-                    logger.i(tag, "Continue Session: ($sessionKey)${it.name}")
-                    isSessionContinue = true
+            Thread {
+                logger.i(tag, "new plugin thread start.")
+                var isSessionContinue = false
+                if (event is MessageEvent) {
+                    val sessionKey = (event.message[0] as MessageSource).fromId.toString()
+                    sessionPool.checkPool(sessionKey)?.let {
+                        logger.i(tag, "Continue Session: ($sessionKey)${it.name}")
+                        isSessionContinue = true
+                    }
                 }
-            }
 
-            // 当有相应会话时优先响应会话而不触发其他插件
-            if (!isSessionContinue) {
-                for (plugin in plugins) {
-                    if (plugin is EventPlugin<*>) {
-                        if (pluginHandler(plugin, event)) {
-                            logger.i(tag, "Event Cease From Plugin ${plugin.javaClass.name}")
-                            break
+                // 当有相应会话时优先响应会话而不触发其他插件
+                if (!isSessionContinue) {
+                    for (plugin in plugins) {
+                        if (plugin is EventPlugin<*>) {
+                            if (pluginHandler(plugin, event)) {
+                                logger.i(tag, "Event Cease From Plugin ${plugin.javaClass.name}")
+                                break
+                            }
                         }
                     }
                 }
-            }
+                logger.i(tag, "plugin thread end")
+            }.start()
         }
         logger.i(tag, "Initialized Plugins")
 
@@ -130,11 +135,10 @@ class MilkyTea(
         logger.i(tag, "Initialized MessagePool")
         Thread {
             while (true) {
-                val nowTime = System.currentTimeMillis() / 1000  // 注意该处的时间戳单位是秒!
+                val nowTime = System.currentTimeMillis() / 1000  // 该处的时间戳单位是秒
                 for (obj in messagePool){
                     val removeList = arrayListOf<MessageChain>()
                     for ( msg in obj.value){
-                        // 删除所有1小时前的消息, 在迭代器中不能直接remove, 除非是线程安全的.
                         if (nowTime - msg.time > 3600){
                             logger.d(tag, "Remove Message (${obj.key}): ${msg.content}")
                             removeList.add(msg)
@@ -164,7 +168,9 @@ class MilkyTea(
     }
 
     /**
-     * 当收到事件广播时, 判定事件是否符合插件规则, 决定是否执行插件与是否继续传递事件
+     * 收到事件广播时, 判定事件是否符合插件规则, 决定是否执行插件与是否继续传递事件
+     * 当 [EventPlugin.ceaseEvent] 未被定义时, 根据 [EventPlugin.excess] 执行结果决定事件是否传递, 若 excess 也返回 null 则会抛出异常
+     * 等待 [EventPlugin.excess] 返回时有10秒超时时间, 若超时返回 false (不截断事件), 并写入日志
      *
      * @param plugin: 需要处理的插件
      * @param event: 收到广播的事件实例
@@ -177,16 +183,21 @@ class MilkyTea(
         plugin.filter(event) ?. let {
             logger.i(tag, "Hit Plugin ${plugin.javaClass.name}")
             var result: Boolean? = null
-            val job = GlobalScope.launch {result = plugin.excess(it) }  // 协程执行插件逻辑提高吞吐量
+            GlobalScope.launch { result = plugin.excess(it) }  // 协程执行插件逻辑提高吞吐量
 
             // 当 ceaseEvent 未被定义时, 根据 excess 执行结果决定事件是否传递, 若 excess 也返回 null 则会抛出异常
             return if (plugin.ceaseEvent !is Boolean) {
-                runBlocking {
-                    job.join()
+                val startTime = System.currentTimeMillis()
+                while (result == null) {
+                    if (System.currentTimeMillis() - startTime > 10000){
+                        logger.ex(tag, "Plugin ${plugin.javaClass.name} running timeout")
+                        result = false
+                    }
                 }
                 if (result is Boolean) result!!
                 else {
                     logger.er(tag, "Plugin ${plugin.javaClass.name} \"excess Return\" as \"ceaseEvent\" is null")
+                    bot.close()
                     throw Exception("Plugin ${plugin.javaClass.name} \"excess Return\" as \"ceaseEvent\" is null")
                 }
             } else plugin.ceaseEvent!!
@@ -206,7 +217,7 @@ class MilkyTea(
         }
     }
 
-    class MessagePool: Pool<MutableList<MessageChain>>() {
+    class MessagePool: Pool<CopyOnWriteArrayList<MessageChain>>() {
         /**
          * 在整个消息池中查找指定ID的消息
          *
@@ -253,7 +264,7 @@ class MilkyTea(
         class MessagePoolRecorder(override val milkyTea: MilkyTea) : ShareMessagePlugin {
             override val ceaseEvent: Boolean = false
             override val tag: String = "MessagePool"
-            override val keyWords: MutableList<String>? = null
+            override val keyWords: ArrayList<String>? = null
             override val onlyCallMe: Boolean = false
 
             override fun excess(event: MessageEvent): Boolean? {
@@ -263,7 +274,7 @@ class MilkyTea(
                     (event.message[0] as MessageSource).fromId.toString()
 
                 milkyTea.messagePool.checkPool(objKey) ?. add(event.message) ?: let {
-                    milkyTea.messagePool[objKey] = mutableListOf(event.message)
+                    milkyTea.messagePool[objKey] = CopyOnWriteArrayList(arrayListOf(event.message))
                 }
                 milkyTea.logger.d(tag, "Add New Message In MessagePool (${objKey}): ${event.message.content}")
                 return null

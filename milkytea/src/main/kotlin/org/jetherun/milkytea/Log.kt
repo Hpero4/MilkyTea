@@ -6,7 +6,7 @@ import java.lang.Exception
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-class Log(private val path: String = "/log"){
+class Log(private val path: String = "log"){
     var level = 0  // 日志等级, 默认DEBUG, 会响应该等级(含)或以上的消息, 可以随时修改
     private val pathF = File(path)
 
@@ -51,7 +51,7 @@ class Log(private val path: String = "/log"){
             val logTime = DateTimeFormatter.ofPattern("HH:mm:ss").format(LocalDateTime.now())
 
             // "[MilkyTea] 时:分:秒 等级/标签 行号: 消息内容"
-            val logData = "[MilkyTea] $logTime $lvName/$tag $codeFile:$lineNum: $msg\n"
+            val logData = "[MilkyTea] $logTime $lvName/$tag $codeFile:$lineNum: $msg\r\n"
 
             val logFileWriter = FileWriter(logFile, true)
             logFileWriter.write(logData)
