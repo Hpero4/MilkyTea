@@ -1,0 +1,56 @@
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '1.5.10'
+}
+
+group 'org.jetherun'
+version '1.0-SNAPSHOT'
+apply plugin: 'application'
+mainClassName = 'org.jetherun.milkytea.MainKt'
+
+repositories {
+    mavenCentral()
+    maven { url 'https://maven.aliyun.com/repository/jcenter' }
+    maven { url 'https://maven.aliyun.com/repository/google' }
+    maven { url 'https://maven.aliyun.com/repository/central' }
+    maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+    maven { url 'https://developer.huawei.com/repo/' }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib"
+
+    // mirai QQ
+    implementation "net.mamoe:mirai-core:2.7-M2"
+    implementation "net.mamoe:mirai-core-api:2.7-M2"
+
+    implementation 'org.xerial:sqlite-jdbc:3.36.0.1'  // sqlite java插件
+    implementation "org.ktorm:ktorm-support-sqlite:3.4.1"// ktorm sqlite插件
+    implementation "org.ktorm:ktorm-core:3.4.1"  // ORM框架 SQL
+    implementation "com.alibaba:fastjson:1.2.52"  // json处理
+    implementation "net.dongliu:requests:5.0.8"  // requests Java版
+    implementation "com.huaban:jieba-analysis:1.0.2"  // jieba分词 Java版
+    implementation "org.jsoup:jsoup:1.12.1"  // Soup Java版 Html解析
+    implementation "com.google.zxing:core:3.4.0"  // 二维码条码扫描
+    implementation "com.google.zxing:javase:3.4.0"  // 二维码条码扫描
+    implementation "net.coobird:thumbnailator:0.4.11"  // 图片处理 (LOLTool用)
+    implementation 'com.huawei.hms:scanplus:1.1.3.301'  // 华为库
+
+    // 阿里云SDK
+    implementation "com.aliyun:aliyun-java-sdk-imageaudit:1.0.6"  // 内容安全
+    implementation "com.aliyun:aliyun-java-sdk-core:4.5.2"  // 核心库
+    implementation "com.aliyun:viapi-utils:1.0.0"  // URL生成(工具类)
+    implementation "com.aliyun:aliyun-java-sdk-viapiutils:1.0.0"  // URL生成
+
+    // 百度云SDK
+    implementation "com.baidu.aip:java-sdk:4.12.0"
+
+    // 腾讯云SDK
+    implementation "com.tencentcloudapi:tencentcloud-sdk-java:3.1.80"
+}
+
+compileKotlin {
+    kotlinOptions.jvmTarget = "1.8"
+}
+compileTestKotlin {
+    kotlinOptions.jvmTarget = "1.8"
+}
