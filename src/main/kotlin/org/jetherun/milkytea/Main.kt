@@ -4,7 +4,7 @@ import org.jetherun.milkytea.plugins.group.*
 import org.jetherun.milkytea.plugins.share.*
 
 suspend fun main() {
-    val mt = MilkyTea(2804936938L, "Jh1008.202116")
+    val mt = MilkyTea(QQ号, 密码)
     mt.addPlugin(
         mutableListOf(
             ReCallRecorder::class,  // 撤回消息池
